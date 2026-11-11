@@ -2,7 +2,7 @@
 
 ПрИнж, семестр 1, задание про RecSys. Делал один.
 
-Семь моделей рекомендаций на датасете [MovieLens ml-latest-small](https://grouplens.org/datasets/movielens/latest/) и их сравнение на отложенной по времени выборке. Разбор проблем подходов, проблем в продакшене и метрик для мониторинга лежит в [REPORT.md](REPORT.md).
+Восемь моделей рекомендаций на датасете [MovieLens ml-latest-small](https://grouplens.org/datasets/movielens/latest/) и их сравнение на отложенной по времени выборке: три эвристики, два KNN, content-based, гибрид и нейросетевая Two-Tower (как этап retrieval у YouTube и Pinterest). Разбор современных подходов, проблем подходов, проблем в продакшене и метрик для мониторинга лежит в [REPORT.md](REPORT.md).
 
 | Модель | Тип | NDCG@10 | HitRate@10 |
 |---|---|---|---|
@@ -12,7 +12,8 @@
 | ContentBased | по жанрам, тегам и десятилетию (TF-IDF) | 0.011 | 0.07 |
 | ItemKNN | коллаборативная, item-based | 0.085 | 0.39 |
 | UserKNN | коллаборативная, user-based | 0.087 | 0.37 |
-| Hybrid | ItemKNN + ContentBased + Popular | **0.104** | **0.44** |
+| Hybrid | ItemKNN + ContentBased + Popular | 0.104 | 0.44 |
+| TwoTower | две нейросети-башни (PyTorch), in-batch negatives + logQ | **0.107** | **0.45** |
 
 ## Запуск
 
@@ -23,19 +24,21 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-python evaluate.py          # сравнение моделей, около 3 минут на CPU
-python demo.py --user 1     # рекомендации всех моделей для пользователя
-python demo.py --movie 1    # похожие фильмы для Toy Story
+python evaluate.py                 # сравнение моделей, около 8 минут на CPU (Two-Tower обучается 5 раз)
+python evaluate.py --no-two-tower  # без нейросети, около 3 минут
+python demo.py --user 1            # рекомендации всех моделей для пользователя
+python demo.py --movie 1           # похожие фильмы для Toy Story
 ```
 
-`evaluate.py` сохраняет таблицы в [results/](results/): метрики всех моделей, подбор весов гибрида и анализ холодного старта.
+`evaluate.py` сохраняет таблицы в [results/](results/): метрики всех моделей, подбор весов гибрида, подбор параметров Two-Tower и анализ холодного старта.
 
 ## Структура
 
 ```
 recsys/
   data.py        # загрузка датасета и разбиение train/test по времени
-  models.py      # все модели с общим интерфейсом fit / recommend
+  models.py      # эвристики, content-based, KNN и гибрид с общим интерфейсом fit / recommend
+  two_tower.py   # Two-Tower на PyTorch, тот же интерфейс + fold_in для новых пользователей
   metrics.py     # Precision, Recall, NDCG, HitRate, Coverage, Novelty, Personalization
   evaluation.py  # прогон модели и подсчёт метрик
 evaluate.py      # сравнение моделей, подбор весов гибрида, холодный старт

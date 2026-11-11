@@ -1,5 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 numpy==2.5.4
 pandas==3.1.1
 scipy==1.18.1
 scikit-learn==1.9.1
 tabulate==0.10.0
+# Two-Tower (recsys/two_tower.py), версия только для CPU
+torch==2.14.1+cpu

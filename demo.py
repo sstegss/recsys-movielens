@@ -1,7 +1,8 @@
 """Показать рекомендации разных моделей для пользователя и похожие фильмы.
 
 python demo.py --user 1
-python demo.py --movie 1   # Toy Story
+python demo.py --movie 1              # Toy Story
+python demo.py --user 1 --no-two-tower   # без обучения нейросети (быстрее)
 """
 
 import argparse
@@ -18,11 +19,19 @@ def main():
     parser.add_argument("--user", type=int, default=1)
     parser.add_argument("--movie", type=int, default=None)
     parser.add_argument("-k", type=int, default=10)
+    parser.add_argument("--no-two-tower", action="store_true", help="не обучать Two-Tower")
     args = parser.parse_args()
 
     data = load()
     titles = data.movies.set_index("movieId")["title"]
     train = data.ratings  # для демо учимся на всех оценках
+
+    two_tower = None
+    if not args.no_two_tower:
+        from recsys.two_tower import TwoTower
+
+        print("Обучаю Two-Tower (около минуты на CPU)...")
+        two_tower = TwoTower().fit(train, data)
 
     if args.movie is not None:
         content = M.ContentBased().fit(train, data)
@@ -34,6 +43,10 @@ def main():
         print("\nС этим фильмом также смотрят (item-based CF):")
         for m in item.similar_items(args.movie, args.k):
             print("  ", titles[m])
+        if two_tower is not None:
+            print("\nБлижайшие в пространстве эмбеддингов Two-Tower:")
+            for m in two_tower.similar_items(args.movie, args.k):
+                print("  ", titles[m])
         return
 
     history = train[train["userId"] == args.user].sort_values("timestamp")
@@ -56,6 +69,9 @@ def main():
     ]
     for model in models:
         model.fit(train, data)
+    if two_tower is not None:
+        models.append(two_tower)
+    for model in models:
         print(f"\n{model.name}:")
         for m in model.recommend(args.user, args.k):
             print("  ", titles[m])

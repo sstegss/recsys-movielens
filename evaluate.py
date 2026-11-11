@@ -1,8 +1,12 @@
 """Сравнение всех моделей и анализ холодного старта.
 
 Результаты печатаются и сохраняются в results/.
+
+    python evaluate.py                 # все модели, включая Two-Tower (около 8 минут на CPU)
+    python evaluate.py --no-two-tower  # только эвристики, KNN и гибрид (около 3 минут)
 """
 
+import argparse
 import itertools
 from pathlib import Path
 
@@ -35,6 +39,23 @@ def tune_hybrid(train, data):
     return (best["item"], best["content"], best["pop"]), table
 
 
+def tune_two_tower(train, data):
+    """Размерность и число эпох Two-Tower подбираются на той же валидации,
+    что и веса гибрида. Сетка маленькая: каждая точка это обучение сети."""
+    from recsys.two_tower import TwoTower
+
+    sub_train, val = temporal_split(train)
+    rows = []
+    for dim, epochs in itertools.product([32, 64], [10, 30]):
+        model = TwoTower(dim=dim, epochs=epochs)
+        r = evaluate(model, sub_train, val, data, K)
+        rows.append({"dim": dim, "epochs": epochs, "NDCG@10 (val)": r["NDCG@10"], "обучение, с": model.train_seconds})
+        print(f"  TwoTower dim={dim}, epochs={epochs}: NDCG@10 (val) {r['NDCG@10']:.4f}, {model.train_seconds:.0f} с", flush=True)
+    table = pd.DataFrame(rows).sort_values("NDCG@10 (val)", ascending=False)
+    best = table.iloc[0]
+    return {"dim": int(best["dim"]), "epochs": int(best["epochs"])}, table
+
+
 def cold_start(train, test, data, models_fn, n_users=100, seed=0):
     """Делаем вид, что 100 случайных пользователей только пришли и успели
     оценить первые N фильмов. Всё, что они оценили позже (остаток train и test),
@@ -64,6 +85,10 @@ def cold_items(train, test):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-two-tower", action="store_true", help="не обучать Two-Tower (быстрее)")
+    args = parser.parse_args()
+
     RESULTS.mkdir(exist_ok=True)
     data = load()
     train, test = temporal_split(data.ratings)
@@ -74,6 +99,15 @@ def main():
     grid.head(10).to_markdown(RESULTS / "hybrid_tuning.md", index=False, floatfmt=".4f")
 
     models = [M.Popular(), M.TopRated(), M.GenrePopular(), M.ContentBased(), M.ItemKNN(), M.UserKNN(), hybrid(*weights)]
+    if not args.no_two_tower:
+        from recsys.two_tower import TwoTower
+
+        print("\nПодбор Two-Tower на валидации:")
+        tt_params, tt_grid = tune_two_tower(train, data)
+        print("Лучшие параметры Two-Tower:", tt_params)
+        tt_grid.to_markdown(RESULTS / "two_tower_tuning.md", index=False, floatfmt=".4f")
+        models.append(TwoTower(**tt_params, verbose=True))
+
     table = pd.DataFrame([evaluate(m, train, test, data, K) for m in models])
     print("\n" + table.to_string(index=False, float_format="%.4f"))
     table.to_markdown(RESULTS / "metrics.md", index=False, floatfmt=".4f")
